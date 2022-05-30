@@ -101,6 +101,9 @@ public:
         checkOther.checkAccessOfMovedVariable();
         checkOther.checkModuloOfOne();
         checkOther.checkOverlappingWrite();
+        checkOther.checkTooManyArgumentsFunction();
+        checkOther.checkSuspiciousForLoop();
+        checkOther.checkDifferentVariablesTypes();
     }
 
     /** Is expression a comparison that checks if a nonzero (unsigned/pointer) expression is less than zero? */
@@ -229,6 +232,12 @@ public:
     void checkOverlappingWrite();
     void overlappingWriteUnion(const Token *tok);
     void overlappingWriteFunction(const Token *tok);
+
+    void checkTooManyArgumentsFunction();
+    void checkDifferentVariablesTypes();
+    void checkDifferentVariablesTypesError(const Token* first_var, const Token* second_var, const Token* tok);
+    void checkSuspiciousForLoop();
+    void checkSuspiciousForLoopError(const Token* tok, const Token* first_var);
 
 private:
     // Error messages..

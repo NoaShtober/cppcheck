@@ -3141,4 +3141,180 @@ bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<C
     return foundErrors;
 }
 
+//checkMoveConstructorStart---------------------------------------------------------------------------
+
+void CheckClass::checkMoveConstructor()
+{
+    //runs over all classes and structs
+    for (const Scope* scope : mSymbolDatabase->classAndStructScopes)
+    {
+        //runs over all functions
+        for (const Function& func : scope->functionList)
+        {
+            // if the current function is not a constructor, continue to the next function. 
+            if (!func.isConstructor()) {
+                continue;
+            }
+            //checking if the function type is a regular constructor or a move constructor. 
+            if ((func.type == Function::eConstructor || func.type == Function::eMoveConstructor) && func.argCount() > 0) {
+                const Variable* firstArg = func.getArgumentVar(0); // first argument of the constructor. 
+                if (!checkIfClass(firstArg->typeStartToken()))
+                    continue;
+                // We are intersted in functions in which the first argument is Rvalue. 
+                if (firstArg->isRValueReference()) {
+                    const Token* startCheckFrom = func.token; //first token of the function
+
+                    while (startCheckFrom->str() != "{" && startCheckFrom->str() != ":" && startCheckFrom->str() != "}")
+                    {
+                        startCheckFrom = startCheckFrom->next();
+                    }
+                    bool FoundMove = false;
+                    while (startCheckFrom->str() != "}")
+                    {
+                        if (startCheckFrom->str() == firstArg->name()) {
+                            //checking if the move operation exists in the function. 
+                            if (!(Token::Match(startCheckFrom->tokAt(-4), "std :: move ("))) {
+                                //print Error
+                                checkMoveConstructorError(startCheckFrom, startCheckFrom->tokAt(-2));
+                            }
+                        }
+                        startCheckFrom = startCheckFrom->next();
+                    }
+
+                }
+            }
+
+        }
+    }
+}
+
+
+void CheckClass::checkMoveConstructorError(const Token* tok1, const Token* tok2)
+{
+    std::string if_point = tok1->str();
+    if (tok1->next()->str() == ".")
+        if_point = tok1->str() + tok1->next()->str() + tok1->next()->next()->str();
+    // adding the types to the message
+    reportError(tok1, Severity::warning, "checkMoveConstructor",
+        "Missing move operation on " + if_point + " in the assignment to " + tok2->str() + ". Consider adding move operation in intialization list to increase efficiency",
+        CWE398, Certainty::normal);
+}
+
+//checkMoveConstructorEnd---------------------------------------------------------------------------
+
+
+//checkUnnecssaryPublicDataMembersStart---------------------------------------------------------------------------
+
+void CheckClass::checkUnnecssaryPublicDataMembers()
+{
+    //runs over all classes and structs
+    for (const Scope* scope : mSymbolDatabase->classAndStructScopes) {
+        //runs over all the variables
+        for (const Variable& var : scope->varlist)
+        {
+            //if the data member is public then report the error
+            if (var.accessControl() == AccessControl::Public)
+            {
+                bool isClass = scope->type == Scope::ScopeType::eClass;
+                checkUnnecssaryPublicDataMembersError(var.nameToken(), scope->className, var.name(), isClass);
+            }
+        }
+    }
+}
+
+void CheckClass::checkUnnecssaryPublicDataMembersError(const Token* tok, std::string className, std::string dataMember, bool isClass)
+{
+    std::string classOrStruct = (isClass) ? "class" : "struct";
+    // adding the types to the message
+    reportError(tok, Severity::warning, "checkUnnecssaryPublicDataMembers",
+        "Found unnecssary public data member called : '" + dataMember + "', in " + classOrStruct + " : '" + className + "'",
+        CWE398, Certainty::normal);
+}
+
+//checkUnnecssaryPublicDataMembersEnd---------------------------------------------------------------------------
+
+//checkcheckUsedDataMembersBeforeInitializingStart---------------------------------------------------------------------------
+bool CheckClass::IsInitializedDataMember(std::string DataMemberName, std::string ClassName)
+{
+    for (const Scope* scope : mSymbolDatabase->classAndStructScopes) {
+        for (const Token* tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
+            if (tok->str() == DataMemberName && ClassName == scope->className) {
+                if (Token::Match(tok->tokAt(-1), "%type% %var% ")) {
+                    if (tok->tokAt(3)->str() == "=") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void CheckClass::checkUsedDataMembersBeforeInitializaion()
+{
+    //runs over all classes and structs
+    for (const Scope* scope : mSymbolDatabase->classAndStructScopes)
+    {
+        //if (isVcl(mSettings) && isVclTypeInit(scope->definedType))
+        //    continue;
+        //runs over all functions
+        for (const Function& func : scope->functionList)
+        {
+            // if the current function is not a constructor, continue to the next function. 
+            if (!func.isConstructor()) {
+                continue;
+            }
+            const Token* startCheckFrom = func.token; //first token of the function
+            const Token* initList = func.constructorMemberInitialization(); //first token of initList
+            bool FoundVar = false;
+            for (const Variable& var : scope->varlist)
+            {
+                FoundVar = false;
+                std::string className = scope->className;
+                if (initList != nullptr) {
+                    startCheckFrom = initList;
+                    while (startCheckFrom->str() != "{")
+                    {
+                        if (startCheckFrom->str() == var.name() && startCheckFrom->variable() != nullptr)
+                        {
+                            FoundVar = true;
+                        }
+                        startCheckFrom = startCheckFrom->next();
+                    }
+                }
+                else {
+                    while (startCheckFrom->str() != "{")
+                    {
+                        startCheckFrom = startCheckFrom->next();
+                    }
+                }
+                for (const Token* tok = startCheckFrom; tok != scope->bodyEnd; tok = tok->next())
+                {
+
+                    if (tok->str() == var.name() && tok->variable() != nullptr && FoundVar == false && scope->className == className && tok->next()->str() != "=" && !IsInitializedDataMember(tok->str(), className)) {
+                        bool isClass = scope->type == Scope::ScopeType::eClass;
+                        checkUsedDataMembersBeforeInitializaionError(tok, scope->className, tok->str(), isClass);
+                    }
+
+                    if (tok->str() == var.name() && tok->variable() != nullptr && FoundVar == false && scope->className == className && (tok->next()->str() == "=" || IsInitializedDataMember(tok->str(), className))) {
+                        FoundVar = true;
+                    }
+                }
+
+            }
+
+        }
+    }
+}
+
+void CheckClass::checkUsedDataMembersBeforeInitializaionError(const Token* tok, std::string className, std::string dataMember, bool isClass)
+{
+    std::string classOrStruct = (isClass) ? "class" : "struct";
+    // adding the types to the message
+    reportError(tok, Severity::warning, "checkUsedDataMembersBeforeAssignment",
+        "Found usage of data member called : '" + dataMember + "', in " + classOrStruct + " : '" + className + "' in the constructor, before initializing",
+        CWE398, Certainty::normal);
+}
+//checkcheckUsedDataMembersBeforeInitializingEnd---------------------------------------------------------------------------
+
 

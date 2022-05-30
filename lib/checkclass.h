@@ -85,6 +85,9 @@ public:
         checkClass.checkOverride();
         checkClass.checkThisUseAfterFree();
         checkClass.checkUnsafeClassRefMember();
+        checkClass.checkMoveConstructor();
+        checkClass.checkUnnecssaryPublicDataMembers();
+        checkClass.checkUsedDataMembersBeforeInitializaion();
     }
 
     /** @brief %Check that all class constructors are ok */
@@ -231,6 +234,14 @@ private:
     void unsafeClassRefMemberError(const Token *tok, const std::string &varname);
     void checkDuplInheritedMembersRecursive(const Type* typeCurrent, const Type* typeBase);
 
+    void checkMoveConstructor();
+    void checkMoveConstructorError(const Token* tok1, const Token* tok2);
+    void checkUnnecssaryPublicDataMembersError(const Token* tok, std::string className, std::string dataMember, bool isClass);
+    void checkUnnecssaryPublicDataMembers();
+    void checkUsedDataMembersBeforeInitializaion();
+    void checkUsedDataMembersBeforeInitializaionError(const Token* tok, std::string className, std::string dataMember, bool isClass);
+    bool IsInitializedDataMember(std::string DataMemberName, std::string ClassName);
+
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const override {
         CheckClass c(nullptr, settings, errorLogger);
         c.noConstructorError(nullptr, "classname", false);
@@ -270,6 +281,9 @@ private:
         c.overrideError(nullptr, nullptr);
         c.thisUseAfterFree(nullptr, nullptr, nullptr);
         c.unsafeClassRefMemberError(nullptr, "UnsafeClass::var");
+        c.checkMoveConstructorError(nullptr, nullptr);
+        c.checkUnnecssaryPublicDataMembersError(nullptr, nullptr, nullptr, false);
+        c.checkUsedDataMembersBeforeInitializingError(nullptr, nullptr, nullptr, false);
     }
 
     static std::string myName() {
