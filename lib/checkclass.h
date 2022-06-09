@@ -85,7 +85,7 @@ public:
         checkClass.checkOverride();
         checkClass.checkThisUseAfterFree();
         checkClass.checkUnsafeClassRefMember();
-        checkClass.checkMoveConstructor();
+      checkClass.checkMoveConstructor();
         checkClass.checkUnnecssaryPublicDataMembers();
         checkClass.checkUsedDataMembersBeforeInitializaion();
     }
@@ -281,9 +281,9 @@ private:
         c.overrideError(nullptr, nullptr);
         c.thisUseAfterFree(nullptr, nullptr, nullptr);
         c.unsafeClassRefMemberError(nullptr, "UnsafeClass::var");
-        c.checkMoveConstructorError(nullptr, nullptr);
-        c.checkUnnecssaryPublicDataMembersError(nullptr, nullptr, nullptr, false);
-        c.checkUsedDataMembersBeforeInitializingError(nullptr, nullptr, nullptr, false);
+       c.checkMoveConstructorError(nullptr, nullptr);
+       c.checkUnnecssaryPublicDataMembersError(nullptr, nullptr, nullptr, false);
+        c.checkUsedDataMembersBeforeInitializaionError(nullptr, nullptr, nullptr, false);
     }
 
     static std::string myName() {
