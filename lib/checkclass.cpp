@@ -353,8 +353,7 @@ void CheckClass::checkExplicitConstructors()
                 continue;
 
             if (!func.isExplicit() &&
-                func.argCount() > 0 && func.minArgCount() < 2 &&
-                func.argumentList.front().getTypeName() != "std::initializer_list" &&
+                func.minArgCount() == 1 &&
                 func.type != Function::eCopyConstructor &&
                 func.type != Function::eMoveConstructor) {
                 noExplicitConstructorError(func.tokenDef, scope->className, scope->type == Scope::eStruct);
@@ -3144,6 +3143,19 @@ bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<C
 
 //checkMoveConstructorStart---------------------------------------------------------------------------
 
+bool checkIfClass(const Token* tok)
+{
+    std::string type = tok->str();
+    if (type != "int" && type != "double" && type != "long" && type != "float" &&
+        type != "short" && type != "char" && type != "bool" && type != "longlong" &&
+        type != "longdouble" && type != "string" && type != "void")
+    {
+        return true;
+    }
+    return false;
+
+
+}
 void CheckClass::checkMoveConstructor()
 {
     //runs over all classes and structs
@@ -3196,7 +3208,7 @@ void CheckClass::checkMoveConstructorError(const Token* tok1, const Token* tok2)
     if (tok1->next()->str() == ".")
         if_point = tok1->str() + tok1->next()->str() + tok1->next()->next()->str();
     // adding the types to the message
-    reportError(tok1, Severity::warning, "checkMoveConstructor",
+    reportError(tok1, Severity::performance, "checkMoveConstructor",
         "Missing move operation on " + if_point + " in the assignment to " + tok2->str() + ". Consider adding move operation in intialization list to increase efficiency",
         CWE398, Certainty::normal);
 }
@@ -3227,7 +3239,7 @@ void CheckClass::checkUnnecssaryPublicDataMembersError(const Token* tok, std::st
 {
     std::string classOrStruct = (isClass) ? "class" : "struct";
     // adding the types to the message
-    reportError(tok, Severity::warning, "checkUnnecssaryPublicDataMembers",
+    reportError(tok, Severity::style, "checkUnnecssaryPublicDataMembers",
         "Found unnecssary public data member called : '" + dataMember + "', in " + classOrStruct + " : '" + className + "'",
         CWE398, Certainty::normal);
 }
@@ -3289,7 +3301,7 @@ void CheckClass::checkUsedDataMembersBeforeInitializaion()
                         startCheckFrom = startCheckFrom->next();
                     }
                 }
-                for (const Token* tok = startCheckFrom; tok != scope->bodyEnd; tok = tok->next())
+                for (const Token* tok = startCheckFrom; tok->str() != "}" && !(tok->str() == ")" && tok->next()->str() == ";"); tok = tok->next())
                 {
 
                     if (tok->str() == var.name() && tok->variable() != nullptr && FoundVar == false && scope->className == className && tok->next()->str() != "=" && !IsInitializedDataMember(tok->str(), className)) {
