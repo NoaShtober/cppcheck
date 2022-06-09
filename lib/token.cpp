@@ -638,11 +638,8 @@ const char *Token::chrInFirstWord(const char *str, char c)
 
 bool Token::Match(const Token *tok, const char pattern[], nonneg int varid)
 {
-    if (!(*pattern))
-        return true;
-
     const char *p = pattern;
-    while (true) {
+    while (*p) {
         // Skip spaces in pattern..
         while (*p == ' ')
             ++p;
@@ -657,9 +654,8 @@ bool Token::Match(const Token *tok, const char pattern[], nonneg int varid)
                 while (*p && *p != ' ')
                     ++p;
                 continue;
-            }
-
-            return false;
+            } else
+                return false;
         }
 
         // [.. => search for a one-character token..
@@ -690,6 +686,8 @@ bool Token::Match(const Token *tok, const char pattern[], nonneg int varid)
                 return false;
 
             p = temp;
+            while (*p && *p != ' ')
+                ++p;
         }
 
         // Parse "not" options. Token can be anything except the given one
@@ -697,6 +695,8 @@ bool Token::Match(const Token *tok, const char pattern[], nonneg int varid)
             p += 2;
             if (firstWordEquals(p, tok->str().c_str()))
                 return false;
+            while (*p && *p != ' ')
+                ++p;
         }
 
         // Parse multi options, such as void|int|char (accept token which is one of these 3)
@@ -707,16 +707,14 @@ bool Token::Match(const Token *tok, const char pattern[], nonneg int varid)
                 while (*p && *p != ' ')
                     ++p;
                 continue;
-            }
-            if (res == -1) {
+            } else if (res == -1) {
                 // No match
                 return false;
             }
         }
 
-        // using strchr() for the other instances leads to a performance decrease
-        if (!(p = strchr(p, ' ')))
-            break;
+        while (*p && *p != ' ')
+            ++p;
 
         tok = tok->next();
     }
@@ -1782,7 +1780,56 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
             else {
                 if (&value != &tok->mImpl->mValues->front())
                     out << ",";
-                out << value.toString();
+                if (value.isImpossible())
+                    out << "!";
+                if (value.bound == ValueFlow::Value::Bound::Lower)
+                    out << ">=";
+                if (value.bound == ValueFlow::Value::Bound::Upper)
+                    out << "<=";
+                switch (value.valueType) {
+                case ValueFlow::Value::ValueType::INT:
+                    out << value.intvalue;
+                    break;
+                case ValueFlow::Value::ValueType::TOK:
+                    out << value.tokvalue->str();
+                    break;
+                case ValueFlow::Value::ValueType::FLOAT:
+                    out << value.floatValue;
+                    break;
+                case ValueFlow::Value::ValueType::MOVED:
+                    out << ValueFlow::Value::toString(value.moveKind);
+                    break;
+                case ValueFlow::Value::ValueType::UNINIT:
+                    out << "Uninit";
+                    break;
+                case ValueFlow::Value::ValueType::BUFFER_SIZE:
+                case ValueFlow::Value::ValueType::CONTAINER_SIZE:
+                    out << "size=" << value.intvalue;
+                    break;
+                case ValueFlow::Value::ValueType::ITERATOR_START:
+                    out << "start=" << value.intvalue;
+                    break;
+                case ValueFlow::Value::ValueType::ITERATOR_END:
+                    out << "end=" << value.intvalue;
+                    break;
+                case ValueFlow::Value::ValueType::LIFETIME:
+                    out << "lifetime[" << ValueFlow::Value::toString(value.lifetimeKind) << "]=("
+                        << value.tokvalue->expressionString() << ")";
+                    break;
+                case ValueFlow::Value::ValueType::SYMBOLIC:
+                    out << "symbolic=(" << value.tokvalue->expressionString();
+                    if (value.intvalue > 0)
+                        out << "+" << value.intvalue;
+                    else if (value.intvalue < 0)
+                        out << "-" << -value.intvalue;
+                    out << ")";
+                    break;
+                }
+                if (value.indirect > 0)
+                    for (int i=0; i<value.indirect; i++)
+                        out << "*";
+                if (value.path > 0)
+                    out << "@" << value.path;
             }
         }
         if (xml)
