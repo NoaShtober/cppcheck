@@ -480,6 +480,7 @@ void CheckSizeof::arithOperationsOnVoidPointerError(const Token* tok, const std:
     reportError(tok, Severity::portability, "arithOperationsOnVoidPointer", "$symbol:" + varname + '\n' + message + '\n' + verbose, CWE467, Certainty::normal);
 }
 
+
 //checkAllocationSizeStart--------------------------------------------------------------------------------------------------
 std::string getTypeVarName(enum ValueType::Type var_types)
 {
@@ -491,6 +492,8 @@ std::string getTypeVarName(enum ValueType::Type var_types)
     case ValueType::CONTAINER: return "CONTAINER";
     case ValueType::ITERATOR: return "ITERATOR";
     case ValueType::VOID: return "void";
+    case ValueType::POD: return "POD";
+    case ValueType::RECORD: return "RECORD";
     case ValueType::BOOL: return "bool";
     case ValueType::CHAR: return "char";
     case ValueType::SHORT: return "short";
@@ -503,6 +506,7 @@ std::string getTypeVarName(enum ValueType::Type var_types)
     case ValueType::DOUBLE: return "double";
     case ValueType::LONGDOUBLE: return "longDouble";
     }
+    return "UNKNOWN_INT";
 }
 
 const int getSizeOfType(enum ValueType::Type var_types)
@@ -510,6 +514,13 @@ const int getSizeOfType(enum ValueType::Type var_types)
     switch (var_types)
     {
     case ValueType::UNKNOWN_TYPE: return 0;
+    case ValueType::NONSTD: return -1;
+    case ValueType::SMART_POINTER: return -1;
+    case ValueType::CONTAINER: return -1;
+    case ValueType::ITERATOR: return -1;
+    case ValueType::VOID: return -1;
+    case ValueType::POD: return -1;
+    case ValueType::RECORD: return -1;
     case ValueType::BOOL: return 1;
     case ValueType::CHAR: return 1;
     case ValueType::SHORT: return 2;
@@ -517,20 +528,20 @@ const int getSizeOfType(enum ValueType::Type var_types)
     case ValueType::INT: return 4;
     case ValueType::LONG: return 4;
     case ValueType::LONGLONG: return 8;
+    case ValueType::UNKNOWN_INT: return -1;
     case ValueType::FLOAT: return 4;
     case ValueType::DOUBLE: return 8;
     case ValueType::LONGDOUBLE: return 8;
     default: return -1;
     }
+    return -1;
 }
 
 void CheckSizeof::checkAllocationSize()
 {
     if (!mSettings->severity.isEnabled(Severity::warning))
         return;
-    const Token* variable = nullptr;
     int sizeOfType = 0;
-    int value = 0;
     const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope* scope : symbolDatabase->functionScopes) {
         for (const Token* tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
@@ -564,4 +575,3 @@ void CheckSizeof::checkAllocationSizeError(const Token* tok, std::string type)
 }
 
 //checkAllocationSizeEnd--------------------------------------------------------------------------------------------------
-
