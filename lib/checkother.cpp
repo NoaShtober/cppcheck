@@ -946,32 +946,10 @@ void CheckOther::checkVariableScope()
         if (forHead)
             continue;
 
-        auto isSimpleExpr = [](const Token* tok) {
-            return tok && (tok->isNumber() || tok->tokType() == Token::eString || tok->tokType() == Token::eChar || tok->isBoolean());
-        };
-
         const Token* tok = var->nameToken()->next();
-        if (Token::Match(tok, "; %varid% = %any% ;", var->declarationId())) { // bailout for assignment
+        if (Token::Match(tok, "; %varid% = %any% ;", var->declarationId())) {
             tok = tok->tokAt(3);
-            if (!isSimpleExpr(tok))
-                continue;
-        }
-        else if (Token::Match(tok, "{|(")) { // bailout for constructor
-            const Token* argTok = tok->astOperand2();
-            bool bail = false;
-            while (argTok) {
-                if (Token::simpleMatch(argTok, ",")) {
-                    if (!isSimpleExpr(argTok->astOperand2())) {
-                        bail = true;
-                        break;
-                    }
-                } else if (!isSimpleExpr(argTok)) {
-                    bail = true;
-                    break;
-                }
-                argTok = argTok->astOperand1();
-            }
-            if (bail)
+            if (!tok->isNumber() && tok->tokType() != Token::eString && tok->tokType() != Token::eChar && !tok->isBoolean())
                 continue;
         }
         // bailout if initialized with function call that has possible side effects
@@ -1582,7 +1560,8 @@ void CheckOther::checkConstPointer()
         const Token* const nameTok = var->nameToken();
         // declarations of (static) pointers are (not) split up, array declarations are never split up
         if (tok == nameTok && (!var->isStatic() || Token::simpleMatch(nameTok->next(), "[")) &&
-            !astIsRangeBasedForDecl(nameTok))
+            // range-based for loop
+            !(Token::simpleMatch(nameTok->astParent(), ":") && Token::simpleMatch(nameTok->astParent()->astParent(), "(")))
             continue;
         const ValueType* const vt = tok->valueType();
         if (!vt)
@@ -1598,8 +1577,8 @@ void CheckOther::checkConstPointer()
             deref = true;
         else if (Token::simpleMatch(parent, "[") && parent->astOperand1() == tok && tok != nameTok)
             deref = true;
-        else if (astIsRangeBasedForDecl(tok))
-            continue;
+        else if (Token::Match(parent, "%op%") && Token::simpleMatch(parent->astParent(), "."))
+            deref = true;
         if (deref) {
             const Token* const gparent = parent->astParent();
             if (Token::Match(gparent, "%cop%") && !gparent->isUnaryOp("&") && !gparent->isUnaryOp("*"))
@@ -1616,7 +1595,7 @@ void CheckOther::checkConstPointer()
             } else if (Token::simpleMatch(gparent, "[") && gparent->astOperand2() == parent)
                 continue;
         } else {
-            if (Token::Match(parent, "%oror%|%comp%|&&|?|!"))
+            if (Token::Match(parent, "%oror%|%comp%|&&|?|!|-"))
                 continue;
             else if (Token::simpleMatch(parent, "(") && Token::Match(parent->astOperand1(), "if|while"))
                 continue;
@@ -3790,36 +3769,36 @@ void CheckOther::overlappingWriteFunction(const Token *tok)
     reportError(tok, Severity::error, "overlappingWriteFunction", "Overlapping read/write in " + funcname + "() is undefined behavior");
 }
 
-//checkTooManyArgumentsFunction---------------------------------------------------------------------------
-void CheckOther::checkTooManyArgumentsFunction()
-{
-    const unsigned int MaximumArgsCount = 8;
-
-    const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
-
-    for (const Scope* scope : symbolDatabase->functionScopes) {
-        const Function* function = scope->function;
-        if (!function) {
-            continue;
-        }
-
-        unsigned int arg_count = function->argCount();
-
-        if (arg_count > MaximumArgsCount) {
-            const Token* tok = function->argDef->next();
-            reportError(tok, Severity::warning, "too_many_args", "Function has more than " + std::to_string(MaximumArgsCount) + " arguments.", CWE369, Certainty::normal);
-        }
-
-    }
-
-}
-//checkTooManyArgumentsFunctionEnd---------------------------------------------------------------------------
+////checkTooManyArgumentsFunction---------------------------------------------------------------------------
+//void CheckOther::checkTooManyArgumentsFunction()
+//{
+//    const unsigned int MaximumArgsCount = 8;
+//
+//    const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
+//
+//    for (const Scope* scope : symbolDatabase->functionScopes) {
+//        const Function* function = scope->function;
+//        if (!function) {
+//            continue;
+//        }
+//
+//        unsigned int arg_count = function->argCount();
+//
+//        if (arg_count > MaximumArgsCount) {
+//            const Token* tok = function->argDef->next();
+//            reportError(tok, Severity::warning, "too_many_args", "Function has more than " + std::to_string(MaximumArgsCount) + " arguments.", CWE369, Certainty::normal);
+//        }
+//
+//    }
+//
+//}
+////checkTooManyArgumentsFunctionEnd---------------------------------------------------------------------------
 
 
 //checkDifferentVariablesTypesStart---------------------------------------------------------------------------
 
 //gets enum and return its string
-const char* getTypeName(enum ValueType::Type var_types)
+const char* CheckOther::getTypeName(enum ValueType::Type var_types)
 {
     switch (var_types)
     {
@@ -3828,6 +3807,8 @@ const char* getTypeName(enum ValueType::Type var_types)
     case ValueType::SMART_POINTER: return "SMART_POINTER";
     case ValueType::CONTAINER: return "CONTAINER";
     case ValueType::ITERATOR: return "ITERATOR";
+    case ValueType::RECORD: return "RECORD";
+    case ValueType::POD: return "POD";
     case ValueType::VOID: return "void";
     case ValueType::BOOL: return "bool";
     case ValueType::CHAR: return "char";
@@ -3841,8 +3822,77 @@ const char* getTypeName(enum ValueType::Type var_types)
     case ValueType::DOUBLE: return "double";
     case ValueType::LONGDOUBLE: return "longDouble";
     }
+    return "UNKNOWN_INT";
 }
 
+//void CheckOther::checkDifferentVariablesTypes()
+//{
+//    const bool styleEnabled = mSettings->severity.isEnabled(Severity::style);
+//    const bool warningEnabled = mSettings->severity.isEnabled(Severity::warning);
+//    if (!styleEnabled && !warningEnabled)
+//        return;
+//
+//    const Token* first_var = NULL;
+//    const Token* second_var = NULL;
+//    int num_open_brackets = 0;
+//    int close_brackets_left = -1;
+//    const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
+//    //runs over all functions
+//    for (const Scope* scope : symbolDatabase->functionScopes) {
+//        //runs over all tokens
+//        for (const Token* tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
+//            //searching for matching to the patterns
+//            if (Token::Match(tok, "%var% %assign%") || Token::Match(tok, "%var% %comp%"))
+//            {
+//                num_open_brackets = 0;
+//                close_brackets_left = -1;
+//                first_var = tok;
+//                second_var = tok->tokAt(2);
+//                while (((second_var->str() != ";") && ((close_brackets_left != 0))) && (second_var->str() != "}"))
+//                {
+//                    if (second_var->str() == ";")
+//                        break;
+//                    if (second_var->str() == "(")
+//                    {
+//                        num_open_brackets++;
+//                        close_brackets_left = num_open_brackets;
+//                        second_var = second_var->tokAt(1);
+//                        continue;
+//                    }
+//                    if (second_var->str() == ")")
+//                    {
+//                        close_brackets_left--;
+//                        if ((close_brackets_left == 0) && (Token::Match(second_var->tokAt(1), "%op%")))
+//                        {
+//                            close_brackets_left = -1;
+//                        }
+//
+//                        if (Token::Match(second_var->tokAt(1), "%op%"))
+//                            second_var = second_var->tokAt(2);
+//                        else
+//                            second_var = second_var->tokAt(1);
+//                        continue;
+//                    }
+//                    if (Token::Match(second_var, "%var%"))
+//                    {
+//                        if (first_var && second_var &&
+//                            second_var->valueType() && first_var->valueType() &&
+//                            (second_var->valueType()->type > first_var->valueType()->type) &&
+//                            (getTypeName(second_var->valueType()->type) != "UNKNOWN_TYPE") &&
+//                            (getTypeName(first_var->valueType()->type) != "UNKNOWN_TYPE"))
+//                        {
+//                            checkDifferentVariablesTypesError(first_var, second_var, second_var->tokAt(-1));
+//                        }
+//                    }
+//                    if ((Token::Match(second_var, "%var% %op%")) || (Token::Match(second_var, "%num% %op%")))
+//                        second_var = second_var->tokAt(2);
+//                    else
+//                        second_var = second_var->tokAt(1);
+//                }
+//            }
+//        }
+//    }
+//}
 void CheckOther::checkDifferentVariablesTypes()
 {
     const bool styleEnabled = mSettings->severity.isEnabled(Severity::style);
@@ -3852,66 +3902,41 @@ void CheckOther::checkDifferentVariablesTypes()
 
     const Token* first_var = NULL;
     const Token* second_var = NULL;
-    int num_open_brackets = 0;
-    int close_brackets_left = -1;
     const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
-    //runs over all functions
     for (const Scope* scope : symbolDatabase->functionScopes) {
-        //runs over all tokens
         for (const Token* tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
-            //searching for matching to the patterns
-            if (Token::Match(tok, "%var% %assign%") || Token::Match(tok, "%var% %comp%"))
-            {
-                num_open_brackets = 0;
-                close_brackets_left = -1;
+            if (Token::Match(tok, "%var% %assign% %var%") || Token::Match(tok, "%var% %comp% %var%")) {
                 first_var = tok;
                 second_var = tok->tokAt(2);
-                while (((second_var->str() != ";") && ((close_brackets_left != 0))) && (second_var->str() != "}"))
-                {
-                    if (second_var->str() == ";")
-                        break;
-                    if (second_var->str() == "(")
-                    {
-                        num_open_brackets++;
-                        close_brackets_left = num_open_brackets;
-                        second_var = second_var->tokAt(1);
-                        continue;
-                    }
-                    if (second_var->str() == ")")
-                    {
-                        close_brackets_left--;
-                        if ((close_brackets_left == 0) && (Token::Match(second_var->tokAt(1), "%op%")))
-                        {
-                            close_brackets_left = -1;
-                        }
+            }
+            else if (Token::Match(tok, "%type% %var% %assign% %var%") || Token::Match(tok, "%type% %var% %comp% %var%")) {
+                first_var = tok->tokAt(1);
+                second_var = tok->tokAt(3);
+            }
+            else if (Token::Match(tok, "%var% %assign% %num% %op% %var%") || Token::Match(tok, "%var% %comp% %num% %op% %var%"))
+            {
+                first_var = tok;
+                second_var = tok->tokAt(4);
+            }
+            else if (Token::Match(tok, "%type% %var% %assign% %num% %op% %var%") || Token::Match(tok, "%type% %var% %comp% %num% %op% %var%"))
+            {
+                first_var = tok->tokAt(1);
+                second_var = tok->tokAt(5);
+            }
 
-                        if (Token::Match(second_var->tokAt(1), "%op%"))
-                            second_var = second_var->tokAt(2);
-                        else
-                            second_var = second_var->tokAt(1);
-                        continue;
-                    }
-                    if (Token::Match(second_var, "%var%"))
-                    {
-                        if (first_var && second_var &&
-                            second_var->valueType() && first_var->valueType() &&
-                            (second_var->valueType()->type > first_var->valueType()->type) &&
-                            (getTypeName(second_var->valueType()->type) != "UNKNOWN_TYPE") &&
-                            (getTypeName(first_var->valueType()->type) != "UNKNOWN_TYPE"))
-                        {
-                            checkDifferentVariablesTypesError(first_var, second_var, second_var->tokAt(-1));
-                        }
-                    }
-                    if ((Token::Match(second_var, "%var% %op%")) || (Token::Match(second_var, "%num% %op%")))
-                        second_var = second_var->tokAt(2);
-                    else
-                        second_var = second_var->tokAt(1);
-                }
+            if (first_var && second_var &&
+                second_var->valueType() && first_var->valueType() &&
+                (second_var->valueType()->type > first_var->valueType()->type)&&
+                (getTypeName(second_var->valueType()->type) != "UNKNOWN_TYPE")&&
+                (getTypeName(first_var->valueType()->type) != "UNKNOWN_TYPE"))
+            {
+                checkDifferentVariablesTypesError(first_var, second_var, tok);
+                first_var = NULL;
+                second_var = NULL;
             }
         }
     }
 }
-
 
 
 void CheckOther::checkDifferentVariablesTypesError(const Token* first_var, const Token* second_var, const Token* tok)
@@ -3930,11 +3955,22 @@ void CheckOther::checkDifferentVariablesTypesError(const Token* first_var, const
 //checkSuspiciousForLoopStart---------------------------------------------------------------------------
 
 //check if in a for loops there are two seperators (;)
-bool checkForLoopStructure(const Token* tok)
+bool CheckOther::checkForLoopStructure(const Token* tok)
 {
     int countSeparators = 0;
-    while (tok->str() != "{" && tok->str() != ")")
+    int count_open_bracket = 0;
+    int count_close_bracket = 0;
+    while (tok->str() != "{" )
     {
+        if (tok->str() == "(") {
+            count_open_bracket++;
+        }
+        if (tok->str() == ")") {
+            count_close_bracket++;
+        }
+        if ((tok->str() == ")") && (count_open_bracket - count_close_bracket == 0))
+            break;
+
         if (tok->str() == ";") {
             countSeparators++;
         }
@@ -3973,14 +4009,13 @@ void CheckOther::checkSuspiciousForLoop()
             //reached to for loop
             if (Token::Match(tok, "for ("))
             {
-                if (!checkForLoopStructure(tok))
-                {
+                /*if (!checkForLoopStructure(tok->tokAt(1)))
+                {            
                     continue;
-                }
+                }*/
                 //case that there is no first part
                 if (tok->tokAt(2)->str() == ";")
-                    continue;
-
+                    continue;            
                 //reached to for loop with two seperators
                 last_tok = tok;
                 num_first_part = 0;
@@ -4007,7 +4042,7 @@ void CheckOther::checkSuspiciousForLoop()
 
                 if (!flag1) {
                     first_var = NULL;
-                    break;
+                    continue;
                 }
                 //reached to the first var of the first part of the for loop (the initial part)
                 while (";" != tok->str())
@@ -4029,7 +4064,7 @@ void CheckOther::checkSuspiciousForLoop()
                 {
                     checkSuspiciousForLoopError(tok, first_var);
                     first_var = NULL;
-                    break;
+                    continue;
                 }
 
                 else {
@@ -4054,7 +4089,7 @@ void CheckOther::checkSuspiciousForLoop()
                 if (flag3) {
                     checkSuspiciousForLoopError(tok, first_var);
                     first_var = NULL;
-                    break;
+                    continue;
                 }
             }
         }
