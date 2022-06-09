@@ -119,7 +119,7 @@ private:
         c.sizeofVoidError(nullptr);
         c.sizeofDereferencedVoidPointerError(nullptr, "varname");
         c.arithOperationsOnVoidPointerError(nullptr, "varname", "vartype");
-        c.checkAllocationSizeError(nullptr, "varname");
+       c.checkAllocationSizeError(nullptr, "varname");
     }
 
     static std::string myName() {
