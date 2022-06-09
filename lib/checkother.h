@@ -101,7 +101,7 @@ public:
         checkOther.checkAccessOfMovedVariable();
         checkOther.checkModuloOfOne();
         checkOther.checkOverlappingWrite();
-        checkOther.checkTooManyArgumentsFunction();
+   //     checkOther.checkTooManyArgumentsFunction();
         checkOther.checkSuspiciousForLoop();
         checkOther.checkDifferentVariablesTypes();
     }
@@ -233,11 +233,17 @@ public:
     void overlappingWriteUnion(const Token *tok);
     void overlappingWriteFunction(const Token *tok);
 
-    void checkTooManyArgumentsFunction();
+  //  void checkTooManyArgumentsFunction();
+
     void checkDifferentVariablesTypes();
     void checkDifferentVariablesTypesError(const Token* first_var, const Token* second_var, const Token* tok);
-    void checkSuspiciousForLoop();
+   // gets enum and return its string
+    const char* getTypeName(enum ValueType::Type var_types);
+
+   void checkSuspiciousForLoop();
     void checkSuspiciousForLoopError(const Token* tok, const Token* first_var);
+    //check if in a for loops there are two seperators (;)
+    bool checkForLoopStructure(const Token* tok);
 
 private:
     // Error messages..
